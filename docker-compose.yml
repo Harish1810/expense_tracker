@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  pdf-extractor:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - pdf-extractor

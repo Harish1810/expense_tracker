@@ -1,0 +1,6 @@
+flask
+pdfplumber
+gspread
+google-auth
+flask-cors
+

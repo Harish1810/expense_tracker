@@ -1,0 +1,120 @@
+[
+    {
+        "name": "HDFC",
+        "detection": {
+            "text_present": [
+                "WithdrawalAmt."
+            ]
+        },
+        "date_format": "DD/MM/YY",
+        "columns": [
+            {
+                "name": "Date",
+                "x_min": 0,
+                "x_max": 60,
+                "type": "date"
+            },
+            {
+                "name": "Description",
+                "x_min": 60,
+                "x_max": 280,
+                "type": "string"
+            },
+            {
+                "name": "Withdrawal",
+                "x_min": 400,
+                "x_max": 480,
+                "type": "amount"
+            },
+            {
+                "name": "Deposit",
+                "x_min": 480,
+                "x_max": 560,
+                "type": "amount"
+            },
+            {
+                "name": "Balance",
+                "x_min": 560,
+                "x_max": 1000,
+                "type": "amount"
+            }
+        ],
+        "exclusions": [
+            "Date",
+            "Narration",
+            "Opening Balance",
+            "Closing Balance",
+            "Statement",
+            "HDFC",
+            "Address",
+            "Branch",
+            "2NDFLOOR",
+            "SALAISTREET",
+            "From :",
+            "To :"
+        ],
+        "multiline_strategy": "append_to_previous"
+    },
+    {
+        "name": "ICICI",
+        "detection": {
+            "default": true
+        },
+        "date_format": "DD/MM/YYYY",
+        "columns": [
+            {
+                "name": "S No",
+                "x_min": 0,
+                "x_max": 50,
+                "type": "string"
+            },
+            {
+                "name": "Date",
+                "x_min": 50,
+                "x_max": 110,
+                "type": "date"
+            },
+            {
+                "name": "Cheque No",
+                "x_min": 110,
+                "x_max": 180,
+                "type": "string"
+            },
+            {
+                "name": "Description",
+                "x_min": 180,
+                "x_max": 390,
+                "type": "string"
+            },
+            {
+                "name": "Withdrawal",
+                "x_min": 390,
+                "x_max": 460,
+                "type": "amount"
+            },
+            {
+                "name": "Deposit",
+                "x_min": 460,
+                "x_max": 520,
+                "type": "amount"
+            },
+            {
+                "name": "Balance",
+                "x_min": 520,
+                "x_max": 1000,
+                "type": "amount"
+            }
+        ],
+        "exclusions": [
+            "Remarks",
+            "Withdrawal",
+            "Deposit",
+            "Balance"
+        ],
+        "header_indicators": [
+            "S No",
+            "Cheque No"
+        ],
+        "multiline_strategy": "nearest_neighbor"
+    }
+]
