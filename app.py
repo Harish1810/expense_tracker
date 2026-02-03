@@ -1,5 +1,5 @@
 
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, Response, jsonify, send_from_directory
 from bank_statement_extractor import BankStatementExtractor
 import tempfile
 import os
@@ -10,8 +10,17 @@ from pdfminer.pdfdocument import PDFPasswordIncorrect
 from pdfplumber.pdf import PdfminerException
 from datetime import datetime
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='frontend_build')
 CORS(app)
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
+
 extractor = BankStatementExtractor()
 
 SHEET_ID = '13eQV3PW0JK0CydJeQyrnJWsNwXUQiFZoG0U96UFiYj8'
