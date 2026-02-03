@@ -7,7 +7,7 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 2: Setup the Flask Backend
-FROM python:3.9-slim
+FROM python:3.11-slim
 WORKDIR /app
 
 # Install dependencies
@@ -21,9 +21,9 @@ COPY . .
 # Place them in 'frontend_build' as expected by app.py
 COPY --from=build /app/frontend/dist ./frontend_build
 
-# Expose port
+# Expose port (Documentation only, Railway ignores this for routing but good for local)
 EXPOSE 5000
 
 # Use Gunicorn for production
-# Workers: 2-4 is usually good for small apps. 1 is fine for low traffic.
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "app:app"]
+# Bind to $PORT if available (Railway), else 5000 (Local)
+CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} app:app"]
