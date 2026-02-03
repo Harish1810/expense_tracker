@@ -30,7 +30,12 @@ def serve(path):
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return send_from_directory(app.static_folder, path)
     else:
-        return send_from_directory(app.static_folder, 'index.html')
+        # Check if index.html exists before trying to serve it
+        index_path = os.path.join(app.static_folder, 'index.html')
+        if os.path.exists(index_path):
+            return send_from_directory(app.static_folder, 'index.html')
+        else:
+            return "Backend is running! Frontend build not found. Please check build logs.", 200
 
 extractor = BankStatementExtractor()
 
