@@ -21,10 +21,12 @@ COPY . .
 # Place them in 'frontend_build' as expected by app.py
 COPY --from=build /app/frontend/dist ./frontend_build
 
-# Expose port (Documentation only, Railway ignores this for routing but good for local)
+# Expose port (Documentation only)
 EXPOSE 5000
 
-# Use Gunicorn for production
-# Bind to $PORT if available (Railway), else 5000 (Local)
-# Use 'exec' to replace the shell properly, and log access to stdout
-CMD ["sh", "-c", "exec gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} --access-logfile - app:app"]
+# Copy startup script
+COPY start.sh .
+RUN chmod +x start.sh
+
+# Run the startup script
+CMD ["./start.sh"]
