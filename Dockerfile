@@ -26,4 +26,5 @@ EXPOSE 5000
 
 # Use Gunicorn for production
 # Bind to $PORT if available (Railway), else 5000 (Local)
-CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} app:app"]
+# Use 'exec' to replace the shell properly, and log access to stdout
+CMD ["sh", "-c", "exec gunicorn -w 2 -b 0.0.0.0:${PORT:-5000} --access-logfile - app:app"]

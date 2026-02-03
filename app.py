@@ -13,6 +13,17 @@ from datetime import datetime
 app = Flask(__name__, static_folder='frontend_build')
 CORS(app)
 
+# Debug: Check if frontend build exists
+if os.path.exists(app.static_folder):
+    print(f"Static folder '{app.static_folder}' found.")
+    print("Contents:", os.listdir(app.static_folder))
+else:
+    print(f"WARNING: Static folder '{app.static_folder}' NOT found!")
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "ok"}), 200
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
