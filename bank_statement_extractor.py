@@ -212,6 +212,8 @@ class BankStatementExtractor:
                 
                 # If strategy is append_to_previous, we just append to list and current becomes 'previous'
                 if multiline_strategy == 'append_to_previous':
+                    if fmt_config.get('name') == 'HDFC' and row_data.get('Description'):
+                         row_data['Description'] = self._clean_hdfc_description(row_data['Description'])
                     transactions.append(row_data)
 
             elif multiline_strategy == 'append_to_previous':
@@ -257,6 +259,17 @@ class BankStatementExtractor:
                 transactions.append(data)
                 
         return transactions
+
+    def _clean_hdfc_description(self, desc):
+        import re
+        # Remove long number strings (ref nos) - specifically 15+ digits (like 16-digit 0000...)
+        # Preserving 12-digit UPI IDs
+        desc = re.sub(r'\b\d{15,}\b', '', desc)
+        # Remove dates in DD/MM/YY or DD/MM/YYYY
+        desc = re.sub(r'\b\d{1,2}/\d{1,2}/\d{2,4}\b', '', desc)
+        # Clean extra spaces
+        return re.sub(r'\s+', ' ', desc).strip()
+
 
     def extract_to_csv_string(self, pdf_path, password=None):
         """
