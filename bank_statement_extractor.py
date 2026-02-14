@@ -133,7 +133,7 @@ class BankStatementExtractor:
             # Check exclusions
             is_excluded = False
             for excl in exclusions:
-                if excl in full_line_text:
+                if excl.lower() in full_line_text.lower():
                     is_excluded = True
                     break
             
@@ -173,8 +173,8 @@ class BankStatementExtractor:
                     col_type = matched_col['type']
                     
                     if col_type == 'date':
-                        # Basic validation for date
-                        if len(text) >= 6 and ('.' in text or '/' in text or '-' in text):
+                        # Basic validation for date: must len>=6, have separator, AND have digit
+                        if len(text) >= 6 and ('.' in text or '/' in text or '-' in text) and any(c.isdigit() for c in text):
                             row_data[col_name] = text
                             has_date = True
                     elif col_type == 'amount':

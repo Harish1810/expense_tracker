@@ -226,7 +226,15 @@ def check_status():
         # Helper to create a signature for a transaction
         def get_sig(t):
             # Normalize to avoid type mismatches (gspread returns ints/floats, pdf returns strings)
-            d = str(t.get('Date', '')).strip()
+            # Normalize date to DD/MM/YYYY to handle padding diffs (e.g. 1/2/2026 vs 01/02/2026)
+            d_raw = str(t.get('Date', '')).strip()
+            try:
+                # Try parsing with year, if fails, keep raw
+                d_obj = datetime.strptime(d_raw, "%d/%m/%Y")
+                d = d_obj.strftime("%d/%m/%Y")
+            except ValueError:
+                d = d_raw
+            
             desc = str(t.get('Description', '')).strip()
             
             # Normalize amounts: remove commas, ensure 2 decimal Float -> String

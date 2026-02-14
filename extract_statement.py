@@ -3,7 +3,21 @@ import pdfplumber
 import csv
 import sys
 
-def extract_statement_final(pdf_path, csv_path):
+def extract_statement_final(pdf_path, csv_path, password=None):
+    # ... (rest of the function) ...
+    # Wait, the previous view of extract_statement.py showed it DID NOT use the BankStatementExtractor class, 
+    # but had its own logic.
+    # However, the user's issue description implies they are using the app, which uses BankStatementExtractor.
+    # The file extract_statement.py seems to be an older/alternative script.
+    # But I should probably check if I need to update it too if the user uses it.
+    # Let's check the content of extract_statement.py again in my memory or view it if needed.
+    # Actually, I'll hold off on editing extract_statement.py until I confirm if it's used.
+    # The app.py imports BankStatementExtractor.
+    # The reproduce_issue.py uses BankStatementExtractor.
+    # The user said "there is a bug... in the select date area", which is the UI (app.py).
+    # So fixing BankStatementExtractor and app.py is the priority.
+    # I will SKIP updating extract_statement.py for now unless I see it's linked to the UI.
+    pass
     print(f"Extracting from {pdf_path}...")
     
     transactions = []
