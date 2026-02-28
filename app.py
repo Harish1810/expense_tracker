@@ -408,6 +408,210 @@ def get_last_sync_dates():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/budget', methods=['POST'])
+def update_budget():
+    data = request.json
+    bank_name = data.get('bank', 'ICICI')
+    month_year = data.get('month_year')
+    category = data.get('category')
+    amount = data.get('amount')
+    
+    if not month_year or not category:
+        return jsonify({"error": "Missing month_year or category"}), 400
+        
+    budget_ws_name = "harish_budgets" if bank_name == "ICICI" else "jeyashree_budgets"
+    
+    gc = get_gspread_client()
+    if not gc:
+        return jsonify({"error": "Service account credentials not found"}), 500
+        
+    try:
+        sh = gc.open_by_key(SHEET_ID)
+        try:
+            ws = sh.worksheet(budget_ws_name)
+        except gspread.WorksheetNotFound:
+            ws = sh.add_worksheet(title=budget_ws_name, rows=100, cols=3)
+            ws.append_row(['Category', 'Month-Year', 'Budget'])
+            
+        records = ws.get_all_records()
+        row_idx = None
+        for i, r in enumerate(records):
+            if r.get('Category') == category and r.get('Month-Year') == month_year:
+                row_idx = i + 2 # +2 because header is row 1, 0-index -> 2-index
+                break
+                
+        if row_idx:
+            ws.update_cell(row_idx, 3, amount)
+        else:
+            ws.append_row([category, month_year, amount])
+            
+        return jsonify({"status": "success"})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/dashboard_data', methods=['GET'])
+def get_dashboard_data():
+    bank_name = request.args.get('bank', 'ICICI')
+    selected_month_year = request.args.get('month_year') # MM/YYYY
+    
+    txn_ws_name = "harish_transactions" if bank_name == "ICICI" else "jeyashree_transactions"
+    budget_ws_name = "harish_budgets" if bank_name == "ICICI" else "jeyashree_budgets"
+    
+    gc = get_gspread_client()
+    if not gc:
+        return jsonify({"error": "Service account credentials not found"}), 500
+        
+    try:
+        sh = gc.open_by_key(SHEET_ID)
+        try:
+            txn_ws = sh.worksheet(txn_ws_name)
+            txns = txn_ws.get_all_records()
+        except gspread.WorksheetNotFound:
+            return jsonify({"month_years": [], "data": [], "balance": None, "selected_month_year": None})
+            
+        try:
+            budget_ws = sh.worksheet(budget_ws_name)
+            budgets = budget_ws.get_all_records()
+        except gspread.WorksheetNotFound:
+            budgets = []
+            
+        # Extract unique month-years
+        month_years = set()
+        for t in txns:
+            date_str = str(t.get('Date', '')).strip()
+            try:
+                # Assuming format is DD/MM/YYYY
+                d = datetime.strptime(date_str, "%d/%m/%Y")
+                month_years.add(d.strftime("%m/%Y"))
+            except ValueError:
+                pass
+                
+        sorted_month_years = sorted(list(month_years), key=lambda x: datetime.strptime(x, "%m/%Y"), reverse=True)
+        
+        if not selected_month_year and sorted_month_years:
+            selected_month_year = sorted_month_years[0]
+            
+        if not selected_month_year:
+            return jsonify({"month_years": [], "data": [], "balance": None, "selected_month_year": None})
+            
+        # Calculate totals per category for selected month
+        category_totals = {}
+        category_transactions = {}
+        month_txns = []
+        for t in txns:
+            date_str = str(t.get('Date', '')).strip()
+            try:
+                d = datetime.strptime(date_str, "%d/%m/%Y")
+                if d.strftime("%m/%Y") == selected_month_year:
+                    month_txns.append((d, t))
+            except ValueError:
+                pass
+                
+        for _, t in month_txns:
+            cat = str(t.get('Category', '')).strip()
+            if not cat: continue
+            
+            w_str = str(t.get('Withdrawal', '0')).replace(',', '').strip()
+            if not w_str: w_str = '0'
+            try:
+                w_amt = float(w_str)
+            except:
+                w_amt = 0.0
+                
+            if cat not in category_totals:
+                category_totals[cat] = 0.0
+                category_transactions[cat] = []
+                
+            category_totals[cat] += w_amt
+            if w_amt > 0: # Only include actual expenses in the breakdown
+                category_transactions[cat].append({
+                    "date": str(t.get('Date', '')).strip(),
+                    "description": str(t.get('Description', '')).strip(),
+                    "amount": w_amt
+                })
+            
+        # Balance from chronologically last transaction of that month
+        balance = None
+        if month_txns:
+            month_txns.sort(key=lambda x: x[0])
+            last_txn = month_txns[-1][1]
+            b_str = str(last_txn.get('Balance', '')).replace(',', '').strip()
+            try:
+                if b_str: balance = float(b_str)
+            except:
+                pass
+                
+        # Group all budgets by category
+        all_budgets_by_cat = {}
+        for b in budgets:
+            cat = b.get('Category')
+            my = b.get('Month-Year')
+            bud = b.get('Budget')
+            if cat and my:
+                if cat not in all_budgets_by_cat:
+                    all_budgets_by_cat[cat] = []
+                try:
+                    # Convert MM/YYYY to datetime for sorting
+                    d = datetime.strptime(my, "%m/%Y")
+                    all_budgets_by_cat[cat].append((d, my, bud))
+                except ValueError:
+                    pass
+        
+        # Determine the effective budget for the selected month
+        budget_map = {}
+        try:
+            selected_d = datetime.strptime(selected_month_year, "%m/%Y")
+        except ValueError:
+            selected_d = None
+            
+        for cat, hist in all_budgets_by_cat.items():
+            hist.sort(key=lambda x: x[0])
+            effective_budget = None
+            if selected_d:
+                for d, my, bud in hist:
+                    if d <= selected_d:
+                        effective_budget = bud
+            budget_map[cat] = effective_budget
+                
+        result_data = []
+        for cat, total in category_totals.items():
+            txs = category_transactions.get(cat, [])
+            txs.sort(key=lambda x: x['amount'], reverse=True) # Sort descending by amount
+            result_data.append({
+                "category": cat,
+                "amount": round(total, 2),
+                "budget": budget_map.get(cat, None),
+                "transactions": txs
+            })
+            
+        # Add categories that have budget but no expenses
+        for cat, bud in budget_map.items():
+            if cat not in category_totals:
+                 result_data.append({
+                     "category": cat,
+                     "amount": 0.0,
+                     "budget": bud,
+                     "transactions": []
+                 })
+                 
+        # Sort data largest expense first
+        result_data.sort(key=lambda x: x['amount'], reverse=True)
+            
+        return jsonify({
+            "month_years": sorted_month_years,
+            "selected_month_year": selected_month_year,
+            "data": result_data,
+            "balance": balance
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

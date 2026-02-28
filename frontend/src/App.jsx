@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './index.css'
+import Dashboard from './Dashboard'
 
 function App() {
   const [file, setFile] = useState(null)
@@ -221,14 +222,28 @@ function App() {
           <button
             className={`btn ${view === 'categories' ? 'primary' : ''}`}
             onClick={() => setView('categories')}
+            style={{ marginRight: '10px' }}
           >
             Manage Categories
+          </button>
+          <button
+            className={`btn ${view === 'h-dashboard' ? 'primary' : ''}`}
+            onClick={() => setView('h-dashboard')}
+            style={{ marginRight: '10px' }}
+          >
+            H Dashboard
+          </button>
+          <button
+            className={`btn ${view === 'j-dashboard' ? 'primary' : ''}`}
+            onClick={() => setView('j-dashboard')}
+          >
+            J Dashboard
           </button>
         </div>
       </header>
 
       <main className="main-content">
-        {view === 'processor' ? (
+        {view === 'processor' && (
           <>
             <section className="card upload-section">
               <h2>1. Upload Statement</h2>
@@ -327,7 +342,9 @@ function App() {
               </div>
             )}
           </>
-        ) : (
+        )}
+        
+        {view === 'categories' && (
           <section className="card">
             <h2>Manage Categories</h2>
             <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
@@ -372,6 +389,9 @@ function App() {
             </div>
           </section>
         )}
+
+        {view === 'h-dashboard' && <Dashboard bank="ICICI" />}
+        {view === 'j-dashboard' && <Dashboard bank="HDFC" />}
       </main>
     </div>
   )
