@@ -45,13 +45,18 @@
             "Opening Balance",
             "Closing Balance",
             "Statement",
-            "HDFC",
             "Address",
             "Branch",
-            "2NDFLOOR",
-            "SALAISTREET",
             "From :",
-            "To :"
+            "To :",
+            "HDFCBANKLIMITED",
+            "HDFCBankGSTINnumberdetailsareavailable",
+            "RegisteredOfficeAddress:",
+            "*Closingbalanceincludes",
+            "Contentsofthisstatementwillbeconsideredcorrect",
+            "StateaccountbranchGSTN:",
+            "PageNo.:",
+            "thisstatement."
         ],
         "multiline_strategy": "append_to_previous"
     },
