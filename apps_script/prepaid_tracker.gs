@@ -75,7 +75,8 @@ function parseTransactionEmail(body) {
   if (!merchantMatch) return null;
 
   // Balance: "The Available Balance on your INR Prepaid Card is INR 7,904.65"
-  var balanceMatch = body.match(/Available Balance[^I]*is INR ([\d,]+\.?\d*)/i);
+  // Use [\s\S]*? (lazy, matches newlines too) to safely skip past "INR Prepaid Card"
+  var balanceMatch = body.match(/Available Balance[\s\S]*?is INR ([\d,]+\.?\d*)/i);
 
   var rawAmount  = amountMatch[1].replace(/,/g, '');
   var merchant   = merchantMatch[1].trim();
@@ -205,6 +206,62 @@ function isDuplicate(sheet, parsed) {
     }
   }
   return false;
+}
+
+// ------------------------------------------------------------
+// One-time backfill: reads ALL emails from the sender and
+// updates Balance (column G) for any sheet row that has 0.
+// Run this once manually after fixing the balance regex.
+// ------------------------------------------------------------
+function backfillBalances() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet || sheet.getLastRow() <= 1) {
+    Logger.log('backfillBalances: no data to update.');
+    return;
+  }
+
+  // Build a map of "date_description_amount" → balance from all emails
+  var threads = GmailApp.search('from:' + SENDER);
+  var emailMap = {};
+
+  for (var i = 0; i < threads.length; i++) {
+    var messages = threads[i].getMessages();
+    for (var j = 0; j < messages.length; j++) {
+      var parsed = parseTransactionEmail(messages[j].getPlainBody());
+      if (parsed && parsed.balance !== '0.00') {
+        var key = parsed.date + '_' + parsed.description + '_' + parsed.withdrawal;
+        emailMap[key] = parsed.balance;
+      }
+    }
+  }
+
+  var normAmt = function(val) {
+    return parseFloat(String(val).replace(/,/g, '').trim() || '0').toFixed(2);
+  };
+
+  var dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.length);
+  var data = dataRange.getValues();
+  var updatedCount = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    // Only update rows where balance is currently 0 or empty
+    if (normAmt(data[i][6]) !== '0.00') continue;
+
+    var key = String(data[i][1]).trim() + '_' +
+              String(data[i][3]).trim() + '_' +
+              normAmt(data[i][4]);
+
+    if (emailMap[key]) {
+      data[i][6] = emailMap[key];
+      updatedCount++;
+    }
+  }
+
+  if (updatedCount > 0) {
+    dataRange.setValues(data);
+  }
+  Logger.log('backfillBalances: updated ' + updatedCount + ' row(s).');
 }
 
 // ------------------------------------------------------------
