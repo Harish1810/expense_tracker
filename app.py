@@ -42,6 +42,20 @@ extractor = BankStatementExtractor()
 SHEET_ID = '13eQV3PW0JK0CydJeQyrnJWsNwXUQiFZoG0U96UFiYj8'
 WORKSHEET_NAME = 'transactions'
 
+def get_txn_worksheet(bank_name):
+    if bank_name == "HDFC":
+        return "jeyashree_transactions"
+    if bank_name == "PREPAID":
+        return "prepaid_transactions"
+    return "harish_transactions"
+
+def get_budget_worksheet(bank_name):
+    if bank_name == "HDFC":
+        return "jeyashree_budgets"
+    if bank_name == "PREPAID":
+        return "prepaid_budgets"
+    return "harish_budgets"
+
 def get_gspread_client():
     try:
         # Construct credentials from environment variables
@@ -122,11 +136,8 @@ def sync_to_sheets():
     transactions = data['transactions']
     target_dates = set(data.get('dates', []))
     bank_name = data.get('bank', 'ICICI') # Default
-    
-    # Select worksheet based on bank
-    target_worksheet_name = "harish_transactions" # Default
-    if bank_name == "HDFC":
-        target_worksheet_name = "jeyashree_transactions"
+
+    target_worksheet_name = get_txn_worksheet(bank_name)
     
     gc = get_gspread_client()
     if not gc:
@@ -205,9 +216,7 @@ def check_status():
     if not transactions:
         return jsonify({})
         
-    target_worksheet_name = "harish_transactions"
-    if bank_name == "HDFC":
-        target_worksheet_name = "jeyashree_transactions"
+    target_worksheet_name = get_txn_worksheet(bank_name)
         
     try:
         gc = get_gspread_client()
@@ -376,7 +385,7 @@ def get_last_sync_dates():
         
         result = {}
         
-        for name, ws_name in [("ICICI", "harish_transactions"), ("HDFC", "jeyashree_transactions")]:
+        for name, ws_name in [("ICICI", "harish_transactions"), ("HDFC", "jeyashree_transactions"), ("PREPAID", "prepaid_transactions")]:
             try:
                 ws = sh.worksheet(ws_name)
                 # Date is in 2nd column (index 1), row 1 is header
@@ -419,12 +428,12 @@ def update_budget():
     if not month_year or not category:
         return jsonify({"error": "Missing month_year or category"}), 400
         
-    budget_ws_name = "harish_budgets" if bank_name == "ICICI" else "jeyashree_budgets"
-    
+    budget_ws_name = get_budget_worksheet(bank_name)
+
     gc = get_gspread_client()
     if not gc:
         return jsonify({"error": "Service account credentials not found"}), 500
-        
+
     try:
         sh = gc.open_by_key(SHEET_ID)
         try:
@@ -457,8 +466,8 @@ def get_dashboard_data():
     bank_name = request.args.get('bank', 'ICICI')
     selected_month_year = request.args.get('month_year') # MM/YYYY
     
-    txn_ws_name = "harish_transactions" if bank_name == "ICICI" else "jeyashree_transactions"
-    budget_ws_name = "harish_budgets" if bank_name == "ICICI" else "jeyashree_budgets"
+    txn_ws_name = get_txn_worksheet(bank_name)
+    budget_ws_name = get_budget_worksheet(bank_name)
     
     gc = get_gspread_client()
     if not gc:
@@ -607,6 +616,147 @@ def get_dashboard_data():
             "balance": balance
         })
         
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/family_dashboard_data', methods=['GET'])
+def get_family_dashboard_data():
+    selected_month_year = request.args.get('month_year')
+
+    sources = [
+        ("ICICI",    "harish_transactions"),
+        ("HDFC",     "jeyashree_transactions"),
+        ("PREPAID",  "prepaid_transactions"),
+    ]
+
+    gc = get_gspread_client()
+    if not gc:
+        return jsonify({"error": "Service account credentials not found"}), 500
+
+    try:
+        sh = gc.open_by_key(SHEET_ID)
+
+        all_txns = []   # (source_name, datetime, record_dict)
+        month_years = set()
+
+        for source_name, ws_name in sources:
+            try:
+                ws = sh.worksheet(ws_name)
+                records = ws.get_all_records()
+            except gspread.WorksheetNotFound:
+                continue
+
+            for t in records:
+                date_str = str(t.get('Date', '')).strip()
+                try:
+                    d = datetime.strptime(date_str, "%d/%m/%Y")
+                    month_years.add(d.strftime("%m/%Y"))
+                    all_txns.append((source_name, d, t))
+                except ValueError:
+                    pass
+
+        sorted_month_years = sorted(month_years, key=lambda x: datetime.strptime(x, "%m/%Y"), reverse=True)
+
+        if not selected_month_year and sorted_month_years:
+            selected_month_year = sorted_month_years[0]
+
+        if not selected_month_year:
+            return jsonify({"month_years": [], "data": [], "selected_month_year": None, "per_source": {}})
+
+        month_txns = [(src, d, t) for src, d, t in all_txns if d.strftime("%m/%Y") == selected_month_year]
+
+        # Aggregate category totals and per-source breakdown
+        category_totals = {}
+        category_breakdown = {}   # {category: {source: amount}}
+
+        for src, d, t in month_txns:
+            cat = str(t.get('Category', '')).strip()
+            if not cat:
+                continue
+
+            w_str = str(t.get('Withdrawal', '0')).replace(',', '').strip()
+            try:
+                w_amt = float(w_str) if w_str else 0.0
+            except ValueError:
+                w_amt = 0.0
+
+            if w_amt <= 0:
+                continue
+
+            if cat not in category_totals:
+                category_totals[cat] = 0.0
+                category_breakdown[cat] = {}
+
+            category_totals[cat] += w_amt
+            category_breakdown[cat][src] = round(category_breakdown[cat].get(src, 0.0) + w_amt, 2)
+
+        # Last balance per source for the selected month
+        balances = {}
+        for src, ws_name in sources:
+            src_txns = sorted([(d, t) for s, d, t in month_txns if s == src], key=lambda x: x[0])
+            if src_txns:
+                b_str = str(src_txns[-1][1].get('Balance', '')).replace(',', '').strip()
+                try:
+                    balances[src] = float(b_str) if b_str else None
+                except ValueError:
+                    balances[src] = None
+            else:
+                balances[src] = None
+
+        result_data = [
+            {
+                "category":  cat,
+                "amount":    round(total, 2),
+                "breakdown": category_breakdown[cat],
+            }
+            for cat, total in sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
+        ]
+
+        return jsonify({
+            "month_years":          sorted_month_years,
+            "selected_month_year":  selected_month_year,
+            "data":                 result_data,
+            "per_source":           {"balances": balances},
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/prepaid_transactions', methods=['GET'])
+def get_prepaid_transactions():
+    gc = get_gspread_client()
+    if not gc:
+        return jsonify({"error": "Service account credentials not found"}), 500
+
+    try:
+        sh = gc.open_by_key(SHEET_ID)
+        try:
+            ws = sh.worksheet('prepaid_transactions')
+            records = ws.get_all_records()
+        except gspread.WorksheetNotFound:
+            return jsonify({"bank": "PREPAID", "transactions": []})
+
+        transactions = []
+        for r in records:
+            transactions.append({
+                "S No": str(r.get("S No", "")),
+                "Date": str(r.get("Date", "")).strip(),
+                "Cheque No": str(r.get("Cheque No", "")),
+                "Description": str(r.get("Description", "")).strip(),
+                "Withdrawal": str(r.get("Withdrawal", "0.00")),
+                "Deposit": str(r.get("Deposit", "0.00")),
+                "Balance": str(r.get("Balance", "")),
+                "Category": str(r.get("Category", ""))
+            })
+
+        return jsonify({"bank": "PREPAID", "transactions": transactions})
+
     except Exception as e:
         import traceback
         traceback.print_exc()

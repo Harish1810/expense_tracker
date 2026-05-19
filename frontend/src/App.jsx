@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './index.css'
 import Dashboard from './Dashboard'
+import PrepaidProcessor from './PrepaidProcessor'
+import FamilyDashboard from './FamilyDashboard'
 
 function App() {
   const [file, setFile] = useState(null)
@@ -25,7 +27,7 @@ function App() {
   const [view, setView] = useState('processor') // 'processor' | 'categories'
   const [newCategory, setNewCategory] = useState('')
 
-  const [lastSyncDates, setLastSyncDates] = useState({ ICICI: '...', HDFC: '...' })
+  const [lastSyncDates, setLastSyncDates] = useState({ ICICI: '...', HDFC: '...', PREPAID: '...' })
 
   const API_BASE = import.meta.env.DEV ? `http://${window.location.hostname}:5000` : ''
 
@@ -209,7 +211,7 @@ function App() {
       <header className="header">
         <h1>Bank Statement Processor</h1>
         <div style={{ marginBottom: '20px', fontSize: '0.9rem', color: '#666' }}>
-          Last Synced: <strong>ICICI:</strong> {lastSyncDates.ICICI} | <strong>HDFC:</strong> {lastSyncDates.HDFC}
+          Last Synced: <strong>ICICI:</strong> {lastSyncDates.ICICI} | <strong>HDFC:</strong> {lastSyncDates.HDFC} | <strong>Prepaid:</strong> {lastSyncDates.PREPAID}
         </div>
         <div className="nav-tabs">
           <button
@@ -236,8 +238,29 @@ function App() {
           <button
             className={`btn ${view === 'j-dashboard' ? 'primary' : ''}`}
             onClick={() => setView('j-dashboard')}
+            style={{ marginRight: '10px' }}
           >
             J Dashboard
+          </button>
+          <button
+            className={`btn ${view === 'prepaid' ? 'primary' : ''}`}
+            onClick={() => setView('prepaid')}
+            style={{ marginRight: '10px' }}
+          >
+            Prepaid
+          </button>
+          <button
+            className={`btn ${view === 'prepaid-dashboard' ? 'primary' : ''}`}
+            onClick={() => setView('prepaid-dashboard')}
+            style={{ marginRight: '10px' }}
+          >
+            Prepaid Dashboard
+          </button>
+          <button
+            className={`btn ${view === 'family-dashboard' ? 'primary' : ''}`}
+            onClick={() => setView('family-dashboard')}
+          >
+            Family Dashboard
           </button>
         </div>
       </header>
@@ -392,6 +415,9 @@ function App() {
 
         {view === 'h-dashboard' && <Dashboard bank="ICICI" />}
         {view === 'j-dashboard' && <Dashboard bank="HDFC" />}
+        {view === 'prepaid' && <PrepaidProcessor categories={categories} />}
+        {view === 'prepaid-dashboard' && <Dashboard bank="PREPAID" />}
+        {view === 'family-dashboard' && <FamilyDashboard />}
       </main>
     </div>
   )
