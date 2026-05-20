@@ -151,7 +151,7 @@ export default function FamilyDashboard() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
                 <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#1e293b' }}>Income Overview</h3>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                  Income window: 26th prev month → 8th next month
+                  Income window: 26th prev month → 25th current month
                 </span>
               </div>
 

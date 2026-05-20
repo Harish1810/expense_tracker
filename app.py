@@ -823,7 +823,7 @@ def get_family_dashboard_data():
         ]
 
         # ── Income summary ──────────────────────────────────────────────
-        # Attribution window: 26th of M-1  →  8th of M+1
+        # Attribution window: 26th of M-1  →  25th of M  (non-overlapping)
         INCOME_CATS    = {'income', 'salary'}
         INVESTED_CATS  = {'investment'}
         EXCLUDED_CATS  = {'not required', 'dividend'} | INCOME_CATS | INVESTED_CATS
@@ -835,11 +835,8 @@ def get_family_dashboard_data():
         last_of_prev   = first_of_sel - timedelta(days=1)
         window_start   = last_of_prev.replace(day=26)
 
-        # 8th of next month
-        if sel_dt.month == 12:
-            window_end = datetime(sel_dt.year + 1, 1, 8)
-        else:
-            window_end = datetime(sel_dt.year, sel_dt.month + 1, 8)
+        # 25th of current month — non-overlapping with adjacent months
+        window_end = sel_dt.replace(day=25)
 
         total_income   = 0.0
         total_invested = 0.0
