@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API_BASE = import.meta.env.DEV ? `http://${window.location.hostname}:5000` : '';
+
+const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function PrepaidProcessor({ categories }) {
   const [originalData, setOriginalData] = useState([]);
@@ -12,6 +14,76 @@ export default function PrepaidProcessor({ categories }) {
   const [dateStatus, setDateStatus] = useState({});
   const [existingCategories, setExistingCategories] = useState({});
   const [fetching, setFetching] = useState(false);
+
+  // Monthly income state
+  const [incomeDefault, setIncomeDefault] = useState(8800);
+  const [incomeOverrides, setIncomeOverrides] = useState({});
+  const [incomeMonths, setIncomeMonths] = useState([]);
+  const [editingIncomeMonth, setEditingIncomeMonth] = useState(null);
+  const [incomeInput, setIncomeInput] = useState('');
+  const [incomeSaving, setIncomeSaving] = useState(false);
+
+  useEffect(() => { fetchIncomeData(); }, []);
+
+  const fetchIncomeData = async () => {
+    try {
+      const resp = await axios.get(`${API_BASE}/prepaid_income`);
+      setIncomeDefault(resp.data.default || 8800);
+      setIncomeOverrides(resp.data.overrides || {});
+      setIncomeMonths(resp.data.month_years || []);
+    } catch (e) {
+      console.error('Failed to fetch prepaid income', e);
+    }
+  };
+
+  const effectiveIncome = (monthYear) => {
+    if (monthYear in incomeOverrides) return incomeOverrides[monthYear];
+    return incomeDefault;
+  };
+
+  const handleSaveIncome = async (monthYear) => {
+    const amount = parseFloat(incomeInput);
+    if (isNaN(amount) || amount < 0) return;
+    setIncomeSaving(true);
+    try {
+      await axios.post(`${API_BASE}/prepaid_income`, { month_year: monthYear, amount });
+      setIncomeOverrides(prev => ({ ...prev, [monthYear]: amount }));
+      setEditingIncomeMonth(null);
+      setIncomeInput('');
+    } catch (e) {
+      console.error('Failed to save income', e);
+    } finally {
+      setIncomeSaving(false);
+    }
+  };
+
+  const handleDeleteIncome = async (monthYear) => {
+    setIncomeSaving(true);
+    try {
+      await axios.delete(`${API_BASE}/prepaid_income`, { data: { month_year: monthYear } });
+      setIncomeOverrides(prev => {
+        const next = { ...prev };
+        delete next[monthYear];
+        return next;
+      });
+    } catch (e) {
+      console.error('Failed to update income', e);
+    } finally {
+      setIncomeSaving(false);
+    }
+  };
+
+  const handleSkipIncome = async (monthYear) => {
+    setIncomeSaving(true);
+    try {
+      await axios.post(`${API_BASE}/prepaid_income`, { month_year: monthYear, amount: 0 });
+      setIncomeOverrides(prev => ({ ...prev, [monthYear]: 0 }));
+    } catch (e) {
+      console.error('Failed to skip income', e);
+    } finally {
+      setIncomeSaving(false);
+    }
+  };
 
   const checkStatus = async (txns) => {
     try {
@@ -180,6 +252,132 @@ export default function PrepaidProcessor({ categories }) {
           </div>
         </section>
       )}
+
+      {/* Monthly income management */}
+      <section className="card" style={{ marginTop: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Monthly Prepaid Income</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+              Default: ₹{fmt(incomeDefault)} credited on 5th of each month
+            </p>
+          </div>
+        </div>
+
+        {incomeMonths.length === 0 ? (
+          <div style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.9rem' }}>
+            No months found. Fetch transactions first to populate months.
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="transactions-table">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Income</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {incomeMonths.map(my => {
+                  const eff = effectiveIncome(my);
+                  const isOverride = my in incomeOverrides;
+                  const isSkipped = isOverride && incomeOverrides[my] === 0;
+                  const isEditing = editingIncomeMonth === my;
+
+                  return (
+                    <tr key={my}>
+                      <td style={{ fontWeight: '600' }}>{my}</td>
+
+                      <td className="amount-cell">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            className="text-input"
+                            style={{ width: '120px', padding: '6px' }}
+                            value={incomeInput}
+                            onChange={e => setIncomeInput(e.target.value)}
+                            autoFocus
+                          />
+                        ) : isSkipped ? (
+                          <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>—</span>
+                        ) : (
+                          <span style={{ color: isOverride ? '#8b5cf6' : '#374151', fontWeight: '600' }}>
+                            ₹{fmt(eff)}
+                          </span>
+                        )}
+                      </td>
+
+                      <td>
+                        {isSkipped ? (
+                          <span style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: '600' }}>Skipped</span>
+                        ) : isOverride ? (
+                          <span style={{ color: '#8b5cf6', fontSize: '0.8rem', fontWeight: '600' }}>Custom</span>
+                        ) : (
+                          <span style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: '600' }}>Default</span>
+                        )}
+                      </td>
+
+                      <td>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              className="btn success"
+                              style={{ padding: '5px 10px', fontSize: '0.8rem' }}
+                              disabled={incomeSaving}
+                              onClick={() => handleSaveIncome(my)}
+                            >
+                              Save
+                            </button>
+                            <button
+                              className="btn"
+                              style={{ padding: '5px 10px', fontSize: '0.8rem' }}
+                              onClick={() => { setEditingIncomeMonth(null); setIncomeInput(''); }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              className="btn primary"
+                              style={{ padding: '5px 10px', fontSize: '0.8rem' }}
+                              onClick={() => { setEditingIncomeMonth(my); setIncomeInput(isSkipped ? incomeDefault : eff); }}
+                            >
+                              Edit
+                            </button>
+                            {isOverride ? (
+                              <button
+                                className="btn"
+                                style={{ padding: '5px 10px', fontSize: '0.8rem' }}
+                                disabled={incomeSaving}
+                                onClick={() => handleDeleteIncome(my)}
+                                title="Revert to default"
+                              >
+                                Restore
+                              </button>
+                            ) : (
+                              <button
+                                className="btn"
+                                style={{ padding: '5px 10px', fontSize: '0.8rem', color: '#ef4444' }}
+                                disabled={incomeSaving}
+                                onClick={() => handleSkipIncome(my)}
+                              >
+                                Skip
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </>
   );
 }

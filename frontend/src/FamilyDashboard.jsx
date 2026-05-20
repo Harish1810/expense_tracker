@@ -24,6 +24,7 @@ export default function FamilyDashboard() {
   const [selectedMonthYear, setSelectedMonthYear] = useState('');
   const [data, setData] = useState([]);
   const [balances, setBalances] = useState({});
+  const [incomeSummary, setIncomeSummary] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => { fetchData(''); }, []);
@@ -43,6 +44,7 @@ export default function FamilyDashboard() {
       }
       setData(resp.data.data || []);
       setBalances(resp.data.per_source?.balances || {});
+      setIncomeSummary(resp.data.income_summary || null);
     } catch (e) {
       console.error('Failed to fetch family dashboard data', e);
     } finally {
@@ -142,6 +144,67 @@ export default function FamilyDashboard() {
               </div>
             </div>
           </div>
+
+          {/* Income summary */}
+          {incomeSummary && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: '#1e293b' }}>Income Overview</h3>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                  Income window: 26th prev month → 8th next month
+                </span>
+              </div>
+
+              {/* Total income */}
+              <div style={{ marginBottom: '20px', padding: '14px 18px', background: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: '700', color: '#15803d', fontSize: '1rem' }}>Total Income</span>
+                <span style={{ fontWeight: '800', color: '#15803d', fontSize: '1.4rem' }}>
+                  {incomeSummary.income > 0 ? `₹${fmt(incomeSummary.income)}` : '—'}
+                </span>
+              </div>
+
+              {/* % breakdown bars */}
+              {incomeSummary.income > 0 ? (() => {
+                const pctSpent    = Math.min((incomeSummary.spent    / incomeSummary.income) * 100, 100);
+                const pctInvested = Math.min((incomeSummary.invested / incomeSummary.income) * 100, 100);
+                const pctUnknown  = Math.max(100 - pctSpent - pctInvested, 0);
+                const unknown     = incomeSummary.unknown;
+
+                const metrics = [
+                  { label: '% Spent',    pct: pctSpent,    amt: incomeSummary.spent,    bar: '#ef4444', bg: '#fef2f2', border: '#fecaca', text: '#dc2626' },
+                  { label: '% Invested', pct: pctInvested, amt: incomeSummary.invested, bar: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe', text: '#7c3aed' },
+                  { label: unknown >= 0 ? '% Remaining' : '% Overspent', pct: Math.abs(100 - pctSpent - pctInvested), amt: Math.abs(unknown), bar: unknown >= 0 ? '#0ea5e9' : '#f97316', bg: unknown >= 0 ? '#f0f9ff' : '#fff7ed', border: unknown >= 0 ? '#bae6fd' : '#fed7aa', text: unknown >= 0 ? '#0284c7' : '#ea580c' },
+                ];
+
+                return (
+                  <>
+                    {/* Stacked bar */}
+                    <div style={{ display: 'flex', height: '10px', borderRadius: '6px', overflow: 'hidden', marginBottom: '16px', background: '#f1f5f9' }}>
+                      <div style={{ width: `${pctSpent}%`,    background: '#ef4444', transition: 'width 0.4s' }} />
+                      <div style={{ width: `${pctInvested}%`, background: '#8b5cf6', transition: 'width 0.4s' }} />
+                      <div style={{ width: `${pctUnknown}%`,  background: '#0ea5e9', transition: 'width 0.4s' }} />
+                    </div>
+
+                    {/* Metric cards */}
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      {metrics.map(m => (
+                        <div key={m.label} style={{ flex: '1', minWidth: '140px', padding: '12px 16px', background: m.bg, border: `1px solid ${m.border}`, borderRadius: '10px' }}>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600', marginBottom: '4px' }}>{m.label}</div>
+                          <div style={{ fontSize: '1.4rem', fontWeight: '800', color: m.text }}>{m.pct.toFixed(1)}%</div>
+                          <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>₹{fmt(m.amt)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })() : (
+                <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', padding: '10px 0', fontStyle: 'italic' }}>
+                  No income transactions found for this month's window.<br />
+                  Tag salary/income deposits as <strong>income</strong> or <strong>salary</strong> in the Processor.
+                </div>
+              )}
+            </div>
+          )}
 
           {data.length > 0 ? (
             <>

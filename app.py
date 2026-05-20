@@ -8,7 +8,7 @@ import json
 from flask_cors import CORS
 from pdfminer.pdfdocument import PDFPasswordIncorrect
 from pdfplumber.pdf import PdfminerException
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__, static_folder='frontend_build')
 CORS(app)
@@ -311,7 +311,10 @@ def check_status():
         return jsonify({})
 
 CATEGORIES_WORKSHEET = 'categories'
-DEFAULT_CATEGORIES = ['food', 'transport', 'rent', 'salary', 'bills', 'shopping', 'investment', 'other', 'entertainment', 'health']
+DEFAULT_CATEGORIES = ['food', 'transport', 'rent', 'salary', 'income', 'bills', 'shopping', 'investment', 'other', 'entertainment', 'health']
+
+PREPAID_INCOME_WORKSHEET = 'prepaid_income'
+DEFAULT_PREPAID_INCOME = 8800.0
 
 def get_or_create_categories_sheet(sh):
     try:
@@ -622,6 +625,110 @@ def get_dashboard_data():
         return jsonify({"error": str(e)}), 500
 
 
+def get_prepaid_income_map(sh):
+    """Returns {MM/YYYY: amount} of all overrides from the prepaid_income sheet."""
+    try:
+        ws = sh.worksheet(PREPAID_INCOME_WORKSHEET)
+        records = ws.get_all_records()
+        result = {}
+        for r in records:
+            my = str(r.get('Month-Year', '')).strip()
+            if my:
+                try:
+                    result[my] = float(r.get('Amount', DEFAULT_PREPAID_INCOME))
+                except (ValueError, TypeError):
+                    pass
+        return result
+    except gspread.WorksheetNotFound:
+        return {}
+
+
+def get_or_create_prepaid_income_sheet(sh):
+    try:
+        ws = sh.worksheet(PREPAID_INCOME_WORKSHEET)
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(title=PREPAID_INCOME_WORKSHEET, rows=100, cols=2)
+        ws.append_row(['Month-Year', 'Amount'])
+    return ws
+
+
+@app.route('/prepaid_income', methods=['GET', 'POST', 'DELETE'])
+def manage_prepaid_income():
+    gc = get_gspread_client()
+    if not gc:
+        return jsonify({"error": "Service account credentials not found"}), 500
+
+    try:
+        sh = gc.open_by_key(SHEET_ID)
+
+        if request.method == 'GET':
+            overrides = get_prepaid_income_map(sh)
+
+            # Also return the months available in prepaid_transactions
+            month_years = []
+            try:
+                txn_ws = sh.worksheet('prepaid_transactions')
+                records = txn_ws.get_all_records()
+                seen = set()
+                for r in records:
+                    date_str = str(r.get('Date', '')).strip()
+                    try:
+                        d = datetime.strptime(date_str, "%d/%m/%Y")
+                        my = d.strftime("%m/%Y")
+                        seen.add(my)
+                    except ValueError:
+                        pass
+                month_years = sorted(seen, key=lambda x: datetime.strptime(x, "%m/%Y"), reverse=True)
+            except gspread.WorksheetNotFound:
+                pass
+
+            return jsonify({
+                "default":     DEFAULT_PREPAID_INCOME,
+                "overrides":   overrides,
+                "month_years": month_years,
+            })
+
+        data = request.json or {}
+        month_year = data.get('month_year', '').strip()
+        if not month_year:
+            return jsonify({"error": "month_year required"}), 400
+
+        ws = get_or_create_prepaid_income_sheet(sh)
+        records = ws.get_all_records()
+
+        if request.method == 'DELETE':
+            # Remove override row → month reverts to default
+            updated = [r for r in records if str(r.get('Month-Year', '')).strip() != month_year]
+            ws.clear()
+            ws.append_row(['Month-Year', 'Amount'])
+            if updated:
+                ws.update('A2', [[r['Month-Year'], r['Amount']] for r in updated])
+            return jsonify({"status": "success"})
+
+        if request.method == 'POST':
+            try:
+                amount = float(data.get('amount', DEFAULT_PREPAID_INCOME))
+            except (ValueError, TypeError):
+                return jsonify({"error": "Invalid amount"}), 400
+
+            row_idx = None
+            for i, r in enumerate(records):
+                if str(r.get('Month-Year', '')).strip() == month_year:
+                    row_idx = i + 2  # +2: header row + 0-index offset
+                    break
+
+            if row_idx:
+                ws.update_cell(row_idx, 2, amount)
+            else:
+                ws.append_row([month_year, amount])
+            return jsonify({"status": "success"})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/family_dashboard_data', methods=['GET'])
 def get_family_dashboard_data():
     selected_month_year = request.args.get('month_year')
@@ -715,11 +822,80 @@ def get_family_dashboard_data():
             for cat, total in sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
         ]
 
+        # ── Income summary ──────────────────────────────────────────────
+        # Attribution window: 26th of M-1  →  8th of M+1
+        INCOME_CATS    = {'income', 'salary'}
+        INVESTED_CATS  = {'investment'}
+        EXCLUDED_CATS  = {'not required', 'dividend'} | INCOME_CATS | INVESTED_CATS
+
+        sel_dt = datetime.strptime(selected_month_year, "%m/%Y")
+
+        # 26th of previous month
+        first_of_sel   = sel_dt.replace(day=1)
+        last_of_prev   = first_of_sel - timedelta(days=1)
+        window_start   = last_of_prev.replace(day=26)
+
+        # 8th of next month
+        if sel_dt.month == 12:
+            window_end = datetime(sel_dt.year + 1, 1, 8)
+        else:
+            window_end = datetime(sel_dt.year, sel_dt.month + 1, 8)
+
+        total_income   = 0.0
+        total_invested = 0.0
+        total_spent    = 0.0
+
+        for src, d, t in all_txns:
+            cat = str(t.get('Category', '')).strip().lower()
+
+            # Income: deposits categorised as income/salary within the window
+            if cat in INCOME_CATS and window_start <= d <= window_end:
+                dep_str = str(t.get('Deposit', '0')).replace(',', '').strip()
+                try:
+                    total_income += float(dep_str) if dep_str else 0.0
+                except ValueError:
+                    pass
+
+            # Spending & investment: withdrawals in the selected month only
+            if d.strftime("%m/%Y") != selected_month_year:
+                continue
+
+            w_str = str(t.get('Withdrawal', '0')).replace(',', '').strip()
+            try:
+                w_amt = float(w_str) if w_str else 0.0
+            except ValueError:
+                w_amt = 0.0
+
+            if w_amt <= 0:
+                continue
+
+            if cat in INVESTED_CATS:
+                total_invested += w_amt
+            elif cat and cat not in EXCLUDED_CATS:
+                total_spent += w_amt
+
+        # Add prepaid virtual income (5th of the selected month is always in window)
+        prepaid_overrides = get_prepaid_income_map(sh)
+        if selected_month_year in prepaid_overrides:
+            effective_prepaid = prepaid_overrides[selected_month_year]  # 0 = skipped by user
+        else:
+            effective_prepaid = DEFAULT_PREPAID_INCOME
+        total_income += effective_prepaid
+
+        income_summary = {
+            "income":          round(total_income, 2),
+            "spent":           round(total_spent, 2),
+            "invested":        round(total_invested, 2),
+            "unknown":         round(total_income - total_spent - total_invested, 2),
+            "prepaid_income":  round(effective_prepaid, 2),
+        }
+
         return jsonify({
             "month_years":          sorted_month_years,
             "selected_month_year":  selected_month_year,
             "data":                 result_data,
             "per_source":           {"balances": balances},
+            "income_summary":       income_summary,
         })
 
     except Exception as e:
@@ -744,6 +920,8 @@ def get_prepaid_transactions():
 
         transactions = []
         for r in records:
+            if str(r.get("Category", "")).strip():
+                continue  # skip already categorized
             transactions.append({
                 "S No": str(r.get("S No", "")),
                 "Date": str(r.get("Date", "")).strip(),
@@ -752,7 +930,7 @@ def get_prepaid_transactions():
                 "Withdrawal": str(r.get("Withdrawal", "0.00")),
                 "Deposit": str(r.get("Deposit", "0.00")),
                 "Balance": str(r.get("Balance", "")),
-                "Category": str(r.get("Category", ""))
+                "Category": ""
             })
 
         return jsonify({"bank": "PREPAID", "transactions": transactions})
